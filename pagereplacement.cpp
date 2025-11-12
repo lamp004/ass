@@ -3,33 +3,42 @@
 #include <thread>
 using namespace std;
 
-// ---------------- FIFO ----------------
+// ======================================================
+//              FIFO PAGE REPLACEMENT ALGORITHM
+// ======================================================
 void fifo(vector<int>& pages, int framesize) {
-    unordered_set<int> frames;
-    queue<int> pageOrder;
-    int pageFaults = 0;
+    unordered_set<int> frames;   // To hold pages currently in memory
+    queue<int> pageOrder;        // Maintains insertion order (FIFO)
+    int pageFaults = 0;          // Count page faults
 
     cout << "\n--- FIFO Page Replacement ---\n";
 
+    // Traverse through all page requests
     for (int i = 0; i < pages.size(); i++) {
         int page = pages[i];
 
-        // If page not in frame (Page Fault)
+        // If page not found in current frames -> PAGE FAULT occurs
         if (frames.find(page) == frames.end()) {
-            pageFaults++;
+            pageFaults++; // Increase fault count
 
+            // If there is free space -> add page directly
             if (frames.size() < framesize) {
                 frames.insert(page);
                 pageOrder.push(page);
-            } else {
+            } 
+            else {
+                // Otherwise, remove the oldest page (front of queue)
                 int oldestPage = pageOrder.front();
                 pageOrder.pop();
                 frames.erase(oldestPage);
+
+                // Add the new page
                 frames.insert(page);
                 pageOrder.push(page);
             }
         }
 
+        // Print current frame status after each page reference
         cout << "Step " << i + 1 << " -> Frames: ";
         for (const auto &f : frames)
             cout << f << " ";
@@ -39,10 +48,12 @@ void fifo(vector<int>& pages, int framesize) {
     cout << "Total Page Faults (FIFO): " << pageFaults << "\n";
 }
 
-// ---------------- LRU ----------------
+// ======================================================
+//              LRU PAGE REPLACEMENT ALGORITHM
+// ======================================================
 void lru(vector<int>& pages, int framesize) {
-    list<int> frames;
-    unordered_map<int, list<int>::iterator> position;
+    list<int> frames;                       // Holds pages (front = least recently used)
+    unordered_map<int, list<int>::iterator> position; // Keeps track of each page’s position
     int pageFaults = 0;
 
     cout << "\n--- LRU Page Replacement ---\n";
@@ -50,28 +61,29 @@ void lru(vector<int>& pages, int framesize) {
     for (int i = 0; i < pages.size(); i++) {
         int page = pages[i];
 
-        // If page not found -> Page Fault
+        // If page is not found in memory -> PAGE FAULT
         if (position.find(page) == position.end()) {
             pageFaults++;
 
-            // If frame full -> remove least recently used (front)
+            // If memory is full -> remove least recently used page (front)
             if (frames.size() == framesize) {
                 int lruPage = frames.front();
                 frames.pop_front();
                 position.erase(lruPage);
             }
 
-            // Insert current page at end (most recently used)
+            // Add current page to the back (most recently used)
             frames.push_back(page);
             position[page] = prev(frames.end());
         }
         else {
-            // Move page to the end (most recently used)
+            // Page already in memory -> move it to the end (most recently used)
             frames.erase(position[page]);
             frames.push_back(page);
             position[page] = prev(frames.end());
         }
 
+        // Print current frame contents
         cout << "Step " << i + 1 << " -> Frames: ";
         for (const auto &f : frames)
             cout << f << " ";
@@ -81,17 +93,20 @@ void lru(vector<int>& pages, int framesize) {
     cout << "Total Page Faults (LRU): " << pageFaults << "\n";
 }
 
-// ---------------- OPTIMAL ----------------
+// ======================================================
+//              OPTIMAL PAGE REPLACEMENT ALGORITHM
+// ======================================================
 void optimal(vector<int>& pages, int framesize) {
-    vector<int> frames;
-    int pageFaults = 0;
+    vector<int> frames;    // Holds pages currently in memory
+    int pageFaults = 0;    // Counter for faults
 
     cout << "\n--- Optimal Page Replacement ---\n";
 
+    // Process each page request
     for (int i = 0; i < pages.size(); i++) {
         int page = pages[i];
 
-        // If page already in frame → skip
+        // If page is already present in frames -> no fault
         if (find(frames.begin(), frames.end(), page) != frames.end()) {
             cout << "Step " << i + 1 << " -> Frames: ";
             for (auto f : frames) cout << f << " ";
@@ -99,17 +114,23 @@ void optimal(vector<int>& pages, int framesize) {
             continue;
         }
 
+        // Page not found -> PAGE FAULT
         pageFaults++;
 
-        // If frames not full → just add page
+        // If memory not full -> directly insert page
         if (frames.size() < framesize) {
             frames.push_back(page);
-        } else {
-            // Find page to replace using future knowledge
-            int farthest = i + 1, replaceIndex = -1;
+        } 
+        else {
+            // Need to replace a page -> choose the one used farthest in future
+            int farthest = i + 1;  // Default next use index
+            int replaceIndex = -1; // Index to replace
 
+            // For every page currently in memory
             for (int j = 0; j < frames.size(); j++) {
-                int nextUse = INT_MAX;
+                int nextUse = INT_MAX; // Track next use of this page
+
+                // Find next occurrence of this page in the future
                 for (int k = i + 1; k < pages.size(); k++) {
                     if (pages[k] == frames[j]) {
                         nextUse = k;
@@ -117,18 +138,21 @@ void optimal(vector<int>& pages, int framesize) {
                     }
                 }
 
+                // The page with the farthest next use will be replaced
                 if (nextUse > farthest) {
                     farthest = nextUse;
                     replaceIndex = j;
                 }
             }
 
-            // If all pages will be used later, remove the first one
+            // If all pages will be used soon, replace the first one
             if (replaceIndex == -1) replaceIndex = 0;
 
+            // Replace selected page with the new one
             frames[replaceIndex] = page;
         }
 
+        // Display current frame contents
         cout << "Step " << i + 1 << " -> Frames: ";
         for (auto f : frames) cout << f << " ";
         cout << endl;
@@ -137,20 +161,27 @@ void optimal(vector<int>& pages, int framesize) {
     cout << "Total Page Faults (Optimal): " << pageFaults << "\n";
 }
 
-// ---------------- MAIN ----------------
+// ======================================================
+//                       MAIN FUNCTION
+// ======================================================
 int main() {
     int n, framesize;
+
+    // Input number of pages
     cout << "Enter number of pages: ";
     cin >> n;
 
+    // Input the reference string
     vector<int> pages(n);
     cout << "Enter the page reference string (space-separated): ";
     for (int i = 0; i < n; i++)
         cin >> pages[i];
 
+    // Input number of frames
     cout << "Enter number of frames (memory size): ";
     cin >> framesize;
 
+    // Run all three algorithms
     fifo(pages, framesize);
     lru(pages, framesize);
     optimal(pages, framesize);
