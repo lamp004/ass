@@ -1,88 +1,114 @@
-#include <bits/stdc++.h>          // Includes all standard C++ libraries
+#include <bits/stdc++.h>
 using namespace std;
 
-// -------------------- STRUCTURES --------------------
-struct Symbol {                  // Structure to hold a symbol's details
-    string name;                 // Name of symbol (like label or variable)
-    int address;                 // Its assigned memory address
+// ---------------- STRUCTURES ----------------
+struct Symbol {
+    string name;
+    int address;
 };
 
-struct Literal {                 // Structure to hold literal's details
-    string name;                 // Literal name (like =’5’)
-    int address;                 // Its assigned address in memory
+struct Literal {
+    string name;
+    int address;
 };
 
-// -------------------- PASS 2 FUNCTION --------------------
-void processPass2(vector<Symbol> symtab, vector<Literal> littab, 
+// ---------------- FUNCTION: Process Pass-II ----------------
+void processPass2(vector<Symbol> symtab, vector<Literal> littab,
                   vector<int> pooltab, vector<string> intermediate) {
-    
-    ofstream machineCode("machinecode.txt");  // Output file for final machine code
+    ofstream machineCode("machinecode.txt");
 
-    // Iterate through each line of intermediate code (output of pass-1)
     for (string line : intermediate) {
-        stringstream ss(line);                // Used to break line into words
-        string LC, classOp, reg, operand;     // LC = Location Counter
-        ss >> LC >> classOp;                  // Read first two fields
+        if (line.empty()) continue; // skip empty lines
 
-        // ---------- 1️⃣ Skip Assembler Directives (AD) ----------
-        if (classOp.find("AD") != string::npos)
-            continue;                         // AD lines don’t generate machine code
+        stringstream ss(line);
+        string LC, classOp, reg, operand;
+        ss >> LC >> classOp;
 
-        // ---------- 2️⃣ Handle Declarative Statements (DL) ----------
-        // DL,01 → Declare Constant (like DC)
+        // ----------- 1️⃣ Skip Assembler Directives (AD) -----------
+        if (classOp.find("AD") != string::npos) {
+            // Handle ORIGIN or EQU if needed (address update only)
+            if (classOp.find("AD,03") != string::npos) {
+                // Example: (S,1)+3 or (S,2)+5
+                string expr;
+                ss >> expr;
+                if (expr.find("+") != string::npos) {
+                    size_t plusPos = expr.find('+');
+                    string symPart = expr.substr(0, plusPos);
+                    string offsetPart = expr.substr(plusPos + 1);
+                    if (symPart.find("S,") != string::npos) {
+                        int symIndex = stoi(symPart.substr(2)) - 1;
+                        int offset = stoi(offsetPart);
+                        int newAddr = symtab[symIndex].address + offset;
+                        machineCode << LC << "\t(AD,03)\t(C," << newAddr << ")\n";
+                    }
+                }
+            }
+            continue;
+        }
+
+        // ----------- 2️⃣ Handle Declarative Statements (DL) -----------
         if (classOp.find("DL,01") != string::npos) {
-            ss >> operand;                    // Get the constant operand
-            string lit = operand;             // Copy to 'lit'
-            if (lit[0] == '=') lit = lit.substr(1);  // Remove '=' if it’s a literal
-            machineCode << LC << "\t00\t0\t" << lit << endl;  
-            // Format: LC  opcode=00  reg=0  operand=value
-        }
-
-        // DL,02 → Declare Storage (like DS)
+            // Declare Constant (DC)
+            ss >> operand;
+            string lit = operand;
+            if (!lit.empty() && lit[0] == '=') lit = lit.substr(1); // remove '='
+            if (!lit.empty() && lit[0] == '\'') lit = lit.substr(1, lit.size() - 2); // remove quotes
+            machineCode << LC << "\t00\t0\t" << lit << endl;
+        } 
         else if (classOp.find("DL,02") != string::npos) {
-            machineCode << LC << "\t--\t--\t--" << endl;  
-            // DS just reserves space → no real machine instruction
+            // Declare Storage (DS)
+            machineCode << LC << "\t--\t--\t--" << endl;
         }
 
-        // ---------- 3️⃣ Handle Imperative Statements (IS) ----------
+        // ----------- 3️⃣ Handle Imperative Statements (IS) -----------
         else if (classOp.find("IS") != string::npos) {
-            ss >> reg >> operand;             // Example: (IS,04) 1 (L,1)
-            string opcode = classOp.substr(3); // Extract '04' from (IS,04)
-            string opfield = "000";           // Default operand field
+            ss >> reg >> operand;
+            string opcode = classOp.substr(3);  // e.g. "04"
+            string opfield = "000";             // default operand
 
-            // Case 1: No operand
-            if (operand == "-" || operand.empty()) {
+            // Case 1: Operand is empty
+            if (operand.empty() || operand == "-") {
                 opfield = "000";
             }
-            // Case 2: Operand refers to literal (L, index)
+            // Case 2: Operand refers to a Literal (L,index)
             else if (operand.find("L,") != string::npos) {
-                int idx = stoi(operand.substr(2)) - 1;  // Get literal index
-                opfield = to_string(littab[idx].address); // Get its address
+                string clean = operand.substr(2);
+                int idx = 0;
+                try { idx = stoi(clean) - 1; } catch (...) { idx = -1; }
+                if (idx >= 0 && idx < littab.size())
+                    opfield = to_string(littab[idx].address);
             }
-            // Case 3: Operand refers to symbol (S, index)
+            // Case 3: Operand refers to a Symbol (S,index)
             else if (operand.find("S,") != string::npos) {
-                int idx = stoi(operand.substr(2)) - 1;  // Get symbol index
-                opfield = to_string(symtab[idx].address); // Get its address
+                string clean = operand.substr(2);
+                int idx = 0;
+                try { idx = stoi(clean) - 1; } catch (...) { idx = -1; }
+                if (idx >= 0 && idx < symtab.size())
+                    opfield = to_string(symtab[idx].address);
+            }
+            // Case 4: Operand is constant
+            else if (operand.find("C,") != string::npos) {
+                opfield = operand.substr(3, operand.size() - 4); // extract constant value
             }
 
-            // Write final machine code line: LC opcode reg operand-address
+            // Output: LC  OPCODE  REG  OPERAND_ADDRESS
             machineCode << LC << "\t" << opcode << "\t" << reg << "\t" << opfield << endl;
         }
 
-        // ---------- 4️⃣ Handle Invalid Lines ----------
+        // ----------- 4️⃣ Handle Invalid Lines -----------
         else {
-            machineCode << LC << "\t--\t--\t--\t; Invalid or unsupported line\n";
+            machineCode << LC << "\t--\t--\t--\t; Unsupported or invalid\n";
         }
     }
 
-    machineCode.close();                       // Close output file
-    cout << "✅ PASS-II completed. Check machinecode.txt\n"; // Confirmation message
+    machineCode.close();
+    cout << "✅ PASS-II completed successfully. Check 'machinecode.txt'.\n";
 }
 
-// -------------------- MAIN FUNCTION --------------------
+// ---------------- MAIN FUNCTION ----------------
 int main() {
     // ---------------- SYMBOL TABLE ----------------
-    vector<Symbol> symtab = {                  // Hardcoded symbols and their addresses
+    vector<Symbol> symtab = {
         {"L1", 205},
         {"NEXT", 209},
         {"BACK", 213},
@@ -90,7 +116,7 @@ int main() {
     };
 
     // ---------------- LITERAL TABLE ----------------
-    vector<Literal> littab = {                 // Hardcoded literals and addresses
+    vector<Literal> littab = {
         {"=5", 202},
         {"=2", 206},
         {"=1", 210},
@@ -99,20 +125,17 @@ int main() {
     };
 
     // ---------------- POOL TABLE ----------------
-    vector<int> pooltab = {1, 3, 5};           // Starting index of each literal pool
-    // Pool 1 → literals 1 & 2
-    // Pool 2 → literals 3 & 4
-    // Pool 3 → literal 5
+    vector<int> pooltab = {1, 3, 5};
 
-    // ---------------- INTERMEDIATE CODE (from PASS-I) ----------------
-    vector<string> intermediate = {            // Each line represents Pass-I output
-        "201 (AD,01) (C,201)",                // START 201
-        "201 (IS,04) 1 (L,1)",                // MOVEM 1, =5
-        "202 (IS,05) 1 (S,4)",                // ADD 1, X
-        "203 (IS,04) 2 (L,2)",                // MOVEM 2, =2
-        "204 (AD,03) (S,1)+3",                // ORIGIN L1+3
-        "207 (AD,05)",                        // LTORG
-        "208 (IS,01) 1 (L,3)",                // STOP
+    // ---------------- INTERMEDIATE CODE ----------------
+    vector<string> intermediate = {
+        "201 (AD,01) (C,201)",
+        "201 (IS,04) 1 (L,1)",
+        "202 (IS,05) 1 (S,4)",
+        "203 (IS,04) 2 (L,2)",
+        "204 (AD,03) (S,1)+3",
+        "207 (AD,05)",
+        "208 (IS,01) 1 (L,3)",
         "209 (IS,02) 2 (L,4)",
         "210 (IS,07) 4 (S,3)",
         "211 (AD,05)",
@@ -120,8 +143,8 @@ int main() {
         "213 (AD,03) (S,2)+5",
         "214 (IS,03) 3 (L,5)",
         "215 (IS,00)",
-        "216 (DL,02) 1",                      // DS 1
-        "217 (AD,02)"                         // END
+        "216 (DL,02) 1",
+        "217 (AD,02)"
     };
 
     // ---------------- RUN PASS-II ----------------
